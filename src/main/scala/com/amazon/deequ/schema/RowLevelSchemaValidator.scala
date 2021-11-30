@@ -16,8 +16,8 @@
 
 package com.amazon.deequ.schema
 
-import org.apache.spark.sql.functions.{col, expr, length, not, unix_timestamp, regexp_extract}
-import org.apache.spark.sql.types.{DataTypes, DecimalType, IntegerType, TimestampType}
+import org.apache.spark.sql.functions.{col, expr, length, not, regexp_extract, unix_timestamp}
+import org.apache.spark.sql.types.{DataTypes, DecimalType, IntegerType, LongType, TimestampType}
 import org.apache.spark.sql.{Column, DataFrame}
 import org.apache.spark.storage.StorageLevel
 
@@ -45,6 +45,16 @@ private[this] case class IntColumnDefinition(
   extends ColumnDefinition {
 
   override def castExpression(): Column = { col(name).cast(IntegerType).as(name) }
+}
+
+private[this] case class LongColumnDefinition(
+                                              name: String,
+                                              isNullable: Boolean = true,
+                                              minValue: Option[Long] = None,
+                                              maxValue: Option[Long] = None)
+  extends ColumnDefinition {
+
+  override def castExpression(): Column = { col(name).cast(LongType).as(name) }
 }
 
 private[this] case class DecimalColumnDefinition(
@@ -111,6 +121,25 @@ case class RowLevelSchema(columnDefinitions: Seq[ColumnDefinition] = Seq.empty) 
     : RowLevelSchema = {
 
     RowLevelSchema(columnDefinitions :+ IntColumnDefinition(name, isNullable, minValue, maxValue))
+  }
+
+  /**
+   * Declare a long column
+   *
+   * @param name column name
+   * @param isNullable are NULL values permitted?
+   * @param minValue minimum value
+   * @param maxValue maximum value
+   * @return
+   */
+  def withLongColumn(
+                     name: String,
+                     isNullable: Boolean = true,
+                     minValue: Option[Long] = None,
+                     maxValue: Option[Long] = None)
+  : RowLevelSchema = {
+
+    RowLevelSchema(columnDefinitions :+ LongColumnDefinition(name, isNullable, minValue, maxValue))
   }
 
   /**
@@ -248,6 +277,21 @@ object RowLevelSchemaValidator {
 
           intDef.maxValue.foreach { value =>
             nextCnf = nextCnf.and(colIsNull.or(colAsInt.leq(value)))
+          }
+
+        case longDef: LongColumnDefinition =>
+
+          val colAsLong = col(longDef.name).cast(LongType)
+
+          /* null or successfully casted */
+          nextCnf = nextCnf.and(colIsNull.or(colAsLong.isNotNull))
+
+          longDef.minValue.foreach { value =>
+            nextCnf = nextCnf.and(colIsNull.isNull.or(colAsLong.geq(value)))
+          }
+
+          longDef.maxValue.foreach { value =>
+            nextCnf = nextCnf.and(colIsNull.or(colAsLong.leq(value)))
           }
 
         case decDef: DecimalColumnDefinition =>

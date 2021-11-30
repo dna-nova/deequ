@@ -146,6 +146,37 @@ class RowLevelSchemaValidatorTest extends WordSpec with SparkContextSpec {
       assert(result.invalidRows.count() == result.numInvalidRows)
     }
 
+    "correctly enforce long constraints" in withSparkSession { sparkSession =>
+
+      import sparkSession.implicits._
+
+      val data = Seq(
+        "123",
+        "N/A",
+        "something",
+        "987",
+        "9223372036854775802",
+        "-40",
+        "-1234568",
+        null
+      ).toDF("id")
+
+      val schema = RowLevelSchema()
+        .withLongColumn("id", isNullable = false, minValue = Some(-100L), maxValue = Some(1000L))
+
+      val result = RowLevelSchemaValidator.validate(data, schema)
+
+      assert(result.numValidRows == 3)
+      val validIds = result.validRows.select("id").collect.map { _.getLong(0) }.toSet
+      assert(validIds.size == result.numValidRows)
+      assert(validIds.contains(123L))
+      assert(validIds.contains(987L))
+      assert(validIds.contains(-40L))
+
+      assert(result.numInvalidRows == 5)
+      assert(result.invalidRows.count() == result.numInvalidRows)
+    }
+
     "correctly enforce decimal constraints" in withSparkSession { sparkSession =>
 
       import sparkSession.implicits._
